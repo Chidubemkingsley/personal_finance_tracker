@@ -1,0 +1,414 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { PlusCircle, Download, TrendingUp, TrendingDown, Filter, X, Edit2, Trash2, DollarSign } from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+const COLORS = ['#10b981', '#ef4444', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'];
+
+export default function FinanceTracker() {
+  const [transactions, setTransactions] = useState([]);
+  const [categories, setCategories] = useState({
+    income: ['Salary', 'Freelance', 'Investment', 'Other'],
+    expense: ['Food', 'Transport', 'Utilities', 'Entertainment', 'Healthcare', 'Other']
+  });
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [formData, setFormData] = useState({
+    type: 'expense',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    category: '',
+    notes: ''
+  });
+  const [filters, setFilters] = useState({
+    type: 'all',
+    category: 'all',
+    startDate: '',
+    endDate: '',
+    sortBy: 'date-desc'
+  });
+  const [newCategory, setNewCategory] = useState({ type: 'expense', name: '' });
+
+  useEffect(() => {
+    const stored = localStorage.getItem('financeData');
+    if (stored) {
+      const data = JSON.parse(stored);
+      setTransactions(data.transactions || []);
+      setCategories(data.categories || categories);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('financeData', JSON.stringify({ transactions, categories }));
+  }, [transactions, categories]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const transaction = {
+      id: editingId || Date.now().toString(),
+      ...formData,
+      amount: parseFloat(formData.amount),
+      timestamp: new Date().toISOString()
+    };
+
+    if (editingId) {
+      setTransactions(transactions.map(t => t.id === editingId ? transaction : t));
+      setEditingId(null);
+    } else {
+      setTransactions([transaction, ...transactions]);
+    }
+
+    setFormData({
+      type: 'expense',
+      amount: '',
+      date: new Date().toISOString().split('T')[0],
+      category: '',
+      notes: ''
+    });
+    setShowForm(false);
+  };
+
+  const handleEdit = (transaction) => {
+    setFormData(transaction);
+    setEditingId(transaction.id);
+    setShowForm(true);
+  };
+
+  const handleDelete = (id) => {
+    if (confirm('Are you sure you want to delete this transaction?')) {
+      setTransactions(transactions.filter(t => t.id !== id));
+    }
+  };
+
+  const addCategory = () => {
+    if (newCategory.name.trim()) {
+      setCategories({
+        ...categories,
+        [newCategory.type]: [...categories[newCategory.type], newCategory.name.trim()]
+      });
+      setNewCategory({ ...newCategory, name: '' });
+    }
+  };
+
+  const deleteCategory = (type, category) => {
+    setCategories({
+      ...categories,
+      [type]: categories[type].filter(c => c !== category)
+    });
+  };
+
+  const filteredTransactions = useMemo(() => {
+    let filtered = [...transactions];
+
+    if (filters.type !== 'all') {
+      filtered = filtered.filter(t => t.type === filters.type);
+    }
+
+    if (filters.category !== 'all') {
+      filtered = filtered.filter(t => t.category === filters.category);
+    }
+
+    if (filters.startDate) {
+      filtered = filtered.filter(t => t.date >= filters.startDate);
+    }
+
+    if (filters.endDate) {
+      filtered = filtered.filter(t => t.date <= filters.endDate);
+    }
+
+    filtered.sort((a, b) => {
+      switch (filters.sortBy) {
+        case 'date-desc':
+          return new Date(b.date) - new Date(a.date);
+        case 'date-asc':
+          return new Date(a.date) - new Date(b.date);
+        case 'amount-desc':
+          return b.amount - a.amount;
+        case 'amount-asc':
+          return a.amount - b.amount;
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [transactions, filters]);
+
+  const stats = useMemo(() => {
+    const income = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+    const expenses = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    return { income, expenses, balance: income - expenses };
+  }, [transactions]);
+
+  const categoryData = useMemo(() => {
+    const expensesByCategory = {};
+    transactions.filter(t => t.type === 'expense').forEach(t => {
+      expensesByCategory[t.category] = (expensesByCategory[t.category] || 0) + t.amount;
+    });
+    return Object.entries(expensesByCategory).map(([name, value]) => ({ name, value }));
+  }, [transactions]);
+
+  const timelineData = useMemo(() => {
+    const grouped = {};
+    transactions.forEach(t => {
+      const month = t.date.substring(0, 7);
+      if (!grouped[month]) {
+        grouped[month] = { month, income: 0, expense: 0 };
+      }
+      grouped[month][t.type] += t.amount;
+    });
+    return Object.values(grouped).sort((a, b) => a.month.localeCompare(b.month));
+  }, [transactions]);
+
+  const exportCSV = () => {
+    const headers = ['Date', 'Type', 'Category', 'Amount', 'Notes'];
+    const rows = filteredTransactions.map(t => [
+      t.date,
+      t.type,
+      t.category,
+      t.amount,
+      t.notes || ''
+    ]);
+    const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `finance-tracker-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4">
+      <div className="max-w-7xl mx-auto">
+        <header className="mb-8 text-center">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+            Personal Finance Tracker
+          </h1>
+          <p className="text-slate-400">Track your income and expenses with ease</p>
+        </header>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-xl shadow-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-emerald-100 text-sm mb-1">Total Income</p>
+                <p className="text-3xl font-bold">${stats.income.toFixed(2)}</p>
+              </div>
+              <TrendingUp className="w-12 h-12 text-emerald-200 opacity-80" />
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-red-500 to-red-600 p-6 rounded-xl shadow-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-red-100 text-sm mb-1">Total Expenses</p>
+                <p className="text-3xl font-bold">${stats.expenses.toFixed(2)}</p>
+              </div>
+              <TrendingDown className="w-12 h-12 text-red-200 opacity-80" />
+            </div>
+          </div>
+
+          <div className={`bg-gradient-to-br ${stats.balance >= 0 ? 'from-blue-500 to-blue-600' : 'from-orange-500 to-orange-600'} p-6 rounded-xl shadow-lg`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-100 text-sm mb-1">Balance</p>
+                <p className="text-3xl font-bold">${stats.balance.toFixed(2)}</p>
+              </div>
+              <DollarSign className="w-12 h-12 text-blue-200 opacity-80" />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <div className="bg-slate-800 p-6 rounded-xl shadow-lg">
+            <h3 className="text-xl font-semibold mb-4">Income vs Expenses</h3>
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={timelineData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                <XAxis dataKey="month" stroke="#94a3b8" />
+                <YAxis stroke="#94a3b8" />
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                <Legend />
+                <Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} />
+                <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="bg-slate-800 p-6 rounded-xl shadow-lg">
+            <h3 className="text-xl font-semibold mb-4">Expenses by Category</h3>
+            <ResponsiveContainer width="100%" height={250}>
+              <PieChart>
+                <Pie data={categoryData} cx="50%" cy="50%" labelLine={false} label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`} outerRadius={80} fill="#8884d8" dataKey="value">
+                  {categoryData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-slate-800 p-6 rounded-xl shadow-lg mb-8">
+          <div className="flex flex-wrap gap-3 mb-6">
+            <button onClick={() => setShowForm(!showForm)} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg flex items-center gap-2 transition">
+              <PlusCircle className="w-5 h-5" />
+              Add Transaction
+            </button>
+            <button onClick={() => setShowCategoryManager(!showCategoryManager)} className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center gap-2 transition">
+              <Filter className="w-5 h-5" />
+              Manage Categories
+            </button>
+            <button onClick={exportCSV} className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg flex items-center gap-2 transition">
+              <Download className="w-5 h-5" />
+              Export CSV
+            </button>
+          </div>
+
+          {showForm && (
+            <form onSubmit={handleSubmit} className="bg-slate-700 p-6 rounded-lg mb-6">
+              <h3 className="text-xl font-semibold mb-4">{editingId ? 'Edit' : 'Add'} Transaction</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm mb-2">Type</label>
+                  <select value={formData.type} onChange={(e) => setFormData({...formData, type: e.target.value, category: ''})} className="w-full bg-slate-600 p-2 rounded-lg">
+                    <option value="income">Income</option>
+                    <option value="expense">Expense</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm mb-2">Amount ($)</label>
+                  <input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} className="w-full bg-slate-600 p-2 rounded-lg" required />
+                </div>
+                <div>
+                  <label className="block text-sm mb-2">Date</label>
+                  <input type="date" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full bg-slate-600 p-2 rounded-lg" required />
+                </div>
+                <div>
+                  <label className="block text-sm mb-2">Category</label>
+                  <select value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} className="w-full bg-slate-600 p-2 rounded-lg" required>
+                    <option value="">Select category</option>
+                    {categories[formData.type].map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm mb-2">Notes (Optional)</label>
+                  <textarea value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} className="w-full bg-slate-600 p-2 rounded-lg" rows="2" />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-4">
+                <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 px-6 py-2 rounded-lg transition">
+                  {editingId ? 'Update' : 'Add'}
+                </button>
+                <button type="button" onClick={() => { setShowForm(false); setEditingId(null); }} className="bg-slate-600 hover:bg-slate-500 px-6 py-2 rounded-lg transition">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
+          {showCategoryManager && (
+            <div className="bg-slate-700 p-6 rounded-lg mb-6">
+              <h3 className="text-xl font-semibold mb-4">Manage Categories</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-semibold mb-3 text-emerald-400">Income Categories</h4>
+                  {categories.income.map(cat => (
+                    <div key={cat} className="flex justify-between items-center bg-slate-600 p-2 rounded mb-2">
+                      <span>{cat}</span>
+                      <button onClick={() => deleteCategory('income', cat)} className="text-red-400 hover:text-red-300">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-3 text-red-400">Expense Categories</h4>
+                  {categories.expense.map(cat => (
+                    <div key={cat} className="flex justify-between items-center bg-slate-600 p-2 rounded mb-2">
+                      <span>{cat}</span>
+                      <button onClick={() => deleteCategory('expense', cat)} className="text-red-400 hover:text-red-300">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 flex gap-3">
+                <select value={newCategory.type} onChange={(e) => setNewCategory({...newCategory, type: e.target.value})} className="bg-slate-600 p-2 rounded-lg">
+                  <option value="income">Income</option>
+                  <option value="expense">Expense</option>
+                </select>
+                <input type="text" value={newCategory.name} onChange={(e) => setNewCategory({...newCategory, name: e.target.value})} placeholder="New category name" className="flex-1 bg-slate-600 p-2 rounded-lg" />
+                <button onClick={addCategory} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg transition">
+                  Add
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="mb-6">
+            <h3 className="text-xl font-semibold mb-4">Filters</h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <select value={filters.type} onChange={(e) => setFilters({...filters, type: e.target.value})} className="bg-slate-700 p-2 rounded-lg text-sm">
+                <option value="all">All Types</option>
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+              </select>
+              <select value={filters.category} onChange={(e) => setFilters({...filters, category: e.target.value})} className="bg-slate-700 p-2 rounded-lg text-sm">
+                <option value="all">All Categories</option>
+                {[...categories.income, ...categories.expense].map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              <input type="date" value={filters.startDate} onChange={(e) => setFilters({...filters, startDate: e.target.value})} placeholder="Start date" className="bg-slate-700 p-2 rounded-lg text-sm" />
+              <input type="date" value={filters.endDate} onChange={(e) => setFilters({...filters, endDate: e.target.value})} placeholder="End date" className="bg-slate-700 p-2 rounded-lg text-sm" />
+              <select value={filters.sortBy} onChange={(e) => setFilters({...filters, sortBy: e.target.value})} className="bg-slate-700 p-2 rounded-lg text-sm">
+                <option value="date-desc">Date (Newest)</option>
+                <option value="date-asc">Date (Oldest)</option>
+                <option value="amount-desc">Amount (High-Low)</option>
+                <option value="amount-asc">Amount (Low-High)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-xl font-semibold mb-4">Transactions ({filteredTransactions.length})</h3>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {filteredTransactions.length === 0 ? (
+                <p className="text-slate-400 text-center py-8">No transactions found</p>
+              ) : (
+                filteredTransactions.map(transaction => (
+                  <div key={transaction.id} className={`bg-slate-700 p-4 rounded-lg flex justify-between items-start ${transaction.type === 'income' ? 'border-l-4 border-emerald-500' : 'border-l-4 border-red-500'}`}>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className={`font-semibold ${transaction.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}>
+                          ${transaction.amount.toFixed(2)}
+                        </span>
+                        <span className="bg-slate-600 px-2 py-1 rounded text-xs">{transaction.category}</span>
+                        <span className="text-slate-400 text-sm">{transaction.date}</span>
+                      </div>
+                      {transaction.notes && <p className="text-slate-400 text-sm">{transaction.notes}</p>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleEdit(transaction)} className="text-blue-400 hover:text-blue-300">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDelete(transaction.id)} className="text-red-400 hover:text-red-300">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
