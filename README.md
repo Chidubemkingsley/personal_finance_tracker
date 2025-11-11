@@ -195,7 +195,7 @@ npm install --save-dev gh-pages
 
 2. Add to package.json:
 ```json
-"homepage": "https://yourusername.github.io/personal-finance-tracker",
+"homepage": "https://github.com/Chidubemkingsley/personal_finance_tracker.git",
 "scripts": {
   "predeploy": "npm run build",
   "deploy": "gh-pages -d build"
@@ -293,7 +293,7 @@ git checkout -b develop
 
 **Your Name**
 - GitHub: [Chidubemkingsley](https://github.com/Chidubemkingsley/personal_finance_tracker.git)
-- Email: your.email@example.com
+- Email: kingsleycaesar581@gmail.com
 
 ## 📄 License
 
